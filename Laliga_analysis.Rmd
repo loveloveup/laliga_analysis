@@ -1,0 +1,104 @@
+---
+title: "laliga_analysis"
+author: "loveloveup"
+date: '2022-05-21'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# install packages 
+library(tidyverse)
+library(ggrepel)
+library(worldfootballR)
+
+# dataset
+Laliga_2021 <- understat_league_match_results(league = "La liga",
+                                         season_start_year = 2021)
+Laliga_2021 <- tibble(Laliga_2021)
+
+Laliga_2021_match <- understat_league_match_results(league = "La liga",
+                                         season_start_year = 2021)
+Laliga_2021_match <- tibble(Laliga_2021_match)
+
+
+```
+
+# data summary
+
+```{r}
+Laliga_2021 |> 
+  glimpse()
+Laliga_2021 |> 
+  head() |> 
+  view()
+
+# wide → long
+Laliga_2021 <- Laliga_2021 |> 
+  pivot_longer(cols = c(home_team,away_team),
+               names_to = "home_away",
+               values_to = "team") |>
+  mutate(win = if_else(home_goals > away_goals,"home_team",
+                       if_else(home_goals == away_goals,"draw","away_team")),
+         point = if_else(home_away == win,3,
+                         if_else(win == "draw",1,0)))
+
+```
+
+## ranking
+```{r}
+Ranking <- Laliga_2021 |> 
+  group_by(team) |> 
+  summarise(points = sum(point)) |> 
+  arrange(desc(points))
+DT::datatable(Ranking)
+top_10 <- Ranking |> 
+  head(10) |> 
+  pull(team)
+
+# 順位の推移
+g <- Laliga_2021 |> 
+  select(team,datetime,point) |> 
+  group_by(team) |> 
+  mutate(points = cumsum(point)) |> 
+  filter(team %in% c(top_10)) |> 
+  ggplot(aes(datetime,points, group = 1, color = team)) +
+  geom_line()
+plotly::ggplotly(g)
+
+```
+
+## Home/Away
+```{r}
+# xG_xGA
+Laliga_2021 |> 
+  mutate(xG = if_else(home_away == "home_team",home_xG,away_xG),
+         xGA = if_else(home_away == "home_team",away_xG,home_xG)) |> 
+  group_by(team) |> 
+  summarise(xG = mean(xG),
+            xGA = mean(xGA)) |> 
+  ggplot(aes(xG,xGA, color = team, label = team)) + 
+  geom_point()+
+  ggrepel::geom_label_repel()+
+  xlim(c(0,2.5))+
+  ylim(c(0,2.5))
+
+Laliga_2021 |> 
+  mutate(xG = if_else(home_away == "home_team",home_xG,away_xG),
+         xGA = if_else(home_away == "home_team",away_xG,home_xG)) |> 
+  group_by(team) |> 
+  summarise(mean_point = mean(point),
+            xG = mean(xG),
+            xGA = mean(xGA)) |> 
+  ggplot(aes(xG,mean_point, color = team, label = team)) + 
+  geom_point()+
+  geom_abline(slope = 1)+
+  ggrepel::geom_label_repel()+
+  xlim(c(0,2.5))+
+  ylim(c(0,2.5))
+  
+
+
+```
+
