@@ -1,19 +1,17 @@
 ---
 title: "laliga_analysis"
 author: "loveloveup"
-date: '2022-05-21'
+date: "2022/05/21"
+output:
   html_document:
-    # ñ⁄éüÇ∆å©èoÇµÇ…ä÷Ç∑ÇÈÇ‡ÇÃ
-    toc: TRUE             # ñ⁄éüÇí«â¡ (FALSE)
-    toc_depth: 3          # å©èoÇµÉåÉxÉã3Ç‹Ç≈ñ⁄éüâª (3)
-    toc_float: TRUE       # ÉXÉNÉçÅ[ÉãÇ…çáÇÌÇπÇƒñ⁄éüÇà⁄ìÆ (FALSE)
-    number_sections: TRUE # å©èoÇµÇ∆ñ⁄éüÇÃäeçÄÇ…î‘çÜÇïtÇØÇÈÅiFALSEÅj
-    # å©ÇΩñ⁄Ç…ä÷Ç∑ÇÈÇ‡ÇÃ
-    highlight: monochrome # ÉVÉìÉ^ÉbÉNÉXÉnÉCÉâÉCÉgÇóòópÇ∑ÇÈ (default)
-    theme: flatly           # ÉeÅ[É}Çê›íËÇ∑ÇÈ (default)
-    # ÇªÇÃëº
-    code_folding: hide    # ÉRÅ[ÉhÇê‹ÇËèÙÇÒÇ≈âBÇ∑ (none)
-    md_extensions: "+ignore_line_breaks" # ägí£ã@î\ÇéwíË (NULL)
+    toc: TRUE             
+    toc_depth: 3          
+    toc_float: TRUE       
+    number_sections: TRUE 
+    highlight: monochrome 
+    theme: flatly       
+    code_folding: hide    
+    md_extensions: "+ignore_line_breaks" 
 ---
 
 
@@ -47,7 +45,7 @@ Laliga_2021 |>
   head() |> 
   view()
 
-# wide ‚Ü? long
+# wide ??? long
 Laliga_2021 <- Laliga_2021 |> 
   pivot_longer(cols = c(home_team,away_team),
                names_to = "home_away",
@@ -70,7 +68,7 @@ top_10 <- Ranking |>
   head(10) |> 
   pull(team)
 
-# È†?‰Ωç„?ÆÊé®Áßª
+# ???‰Ωç???Êé®Áßª
 g <- Laliga_2021 |> 
   select(team,datetime,point) |> 
   group_by(team) |> 
