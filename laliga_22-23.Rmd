@@ -1,0 +1,131 @@
+---
+title: "laliga_analysis_22-23"
+author: "loveloveup"
+date: "2022/08/15"
+output:
+  html_document:
+    toc: TRUE             
+    toc_depth: 3          
+    toc_float: TRUE       
+    number_sections: TRUE 
+    highlight: monochrome 
+    theme: flatly       
+    code_folding: hide    
+    md_extensions: "+ignore_line_breaks" 
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# install packages 
+library(tidyverse)
+library(ggrepel)
+library(worldfootballR)
+library(formattable)
+
+
+# dataset
+Laliga_2022 <- understat_league_match_results(league = "La liga",
+                                         season_start_year = 2022)
+Laliga_2022 <- tibble(Laliga_2022)
+
+Laliga_2022_match <- understat_league_match_results(league = "La liga",
+                                         season_start_year = 2022)
+Laliga_2022_match <- tibble(Laliga_2022_match)
+
+
+```
+
+# data summary
+
+```{r}
+Laliga_2022 |> 
+  glimpse()
+Laliga_2022 |> 
+  head() 
+
+# wide to long
+Laliga_2022 <- Laliga_2022 |> 
+  pivot_longer(cols = c(home_team,away_team),
+               names_to = "home_away",
+               values_to = "team") |>
+  mutate(win = if_else(home_goals > away_goals,"home_team",
+                       if_else(home_goals == away_goals,"draw","away_team")),
+         point = if_else(home_away == win,3,
+                         if_else(win == "draw",1,0))) |> 
+  mutate(G = if_else(home_away == "home_team",home_goals,away_goals),
+         GA = if_else(home_away == "home_team",away_goals,home_goals),
+         xG = if_else(home_away == "home_team",home_xG,away_xG),
+         xGA = if_else(home_away == "home_team",away_xG,home_xG)) 
+
+```
+
+## ranking
+```{r}
+Ranking <- Laliga_2022 |> 
+  group_by(team) |> 
+  summarise(points = sum(point),
+            G = sum(G),
+            xG = sum(xG)) |> 
+  arrange(desc(points))
+DT::datatable(Ranking,
+              extensions = "Buttons",
+              options = list(
+                pageLength = 20,
+                buttons = c("copy", "csv", "excel", "pdf", "print")
+              ))
+
+
+
+top_10 <- Ranking |> 
+  head(10) |> 
+  pull(team)
+
+
+# ランキング推移
+g <- Laliga_2022 |> 
+  select(team,datetime,point) |> 
+  group_by(team) |> 
+  mutate(points = cumsum(point)) |> 
+  filter(team %in% c(top_10)) |> 
+  ggplot(aes(datetime,points, group = 1, color = team)) +
+  geom_line()
+plotly::ggplotly(g)
+
+```
+
+
+# 得点、期待値分析
+## xG_xGA
+ゴール期待値と被ゴール期待値の分布
+
+```{r}
+Laliga_2022 |> 
+  group_by(team) |> 
+  summarise(xG = sum(xG),
+            xGA = sum(xGA)) |> 
+  ggplot(aes(xG,xGA, color = team, label = team)) + 
+  geom_point()+
+  geom_abline(slope = 1)+
+  ggrepel::geom_label_repel()
+
+```
+
+
+## G_xG
+実際のゴール数とゴール期待値の分布（累計）
+
+```{r}
+Laliga_2022 |> 
+  group_by(team) |> 
+  summarise(G = sum(G),
+            xG = sum(xG),
+            xGA = sum(xGA)) |> 
+  ggplot(aes(xG,G, color = team, label = team)) + 
+  geom_point()+
+  geom_abline(slope = 1)+
+  ggrepel::geom_label_repel()
+```
+
