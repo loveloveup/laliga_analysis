@@ -2,3 +2,16 @@
 .Rhistory
 .RData
 .Ruserdata
+
+.wfr_cache/
+files.zip
+report_template_files/
+
+# ローカル環境依存
+.Renviron
+.vscode/
+
+# 生成物(Rmd から再生成可能)
+report_template.html
+report_interactive.html
+*_files/
