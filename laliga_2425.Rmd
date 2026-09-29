@@ -1,0 +1,342 @@
+---
+title: "laliga_analysis_24-25"
+author: "loveloveup"
+date: "2024/09/01"
+output:
+  html_document:
+    toc: TRUE             
+    toc_depth: 3          
+    toc_float: TRUE       
+    number_sections: TRUE 
+    highlight: monochrome 
+    theme: flatly       
+    code_folding: hide    
+    md_extensions: "+ignore_line_breaks" 
+---
+
+データソース
+https://jaseziv.github.io/worldfootballR/articles/extract-understat-data.html#match-level-data-1
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# 必要なパッケージをインストールしてロード
+library(tidyverse)
+library(ggrepel)
+library(worldfootballR)
+library(formattable)
+
+# データセットの取得とtibbleへの変換
+Laliga_2024 <- understat_league_match_results(league = "La liga",
+                                              season_start_year = 2024) %>%
+  as_tibble()
+
+```
+
+# data summary
+
+```{r}
+# データの構造と先頭部分を確認
+Laliga_2024 %>%
+  glimpse()
+
+Laliga_2024 %>%
+  head() 
+
+# データのワイド形式をロング形式に変換し、必要な列を計算
+Laliga_2024 <- Laliga_2024 %>%
+  pivot_longer(cols = c(home_team, away_team),
+               names_to = "home_away",
+               values_to = "team") %>%
+  mutate(win = case_when(
+           home_goals > away_goals ~ "home_team",
+           home_goals == away_goals ~ "draw",
+           TRUE ~ "away_team"),
+         point = case_when(
+           home_away == win ~ 3,
+           win == "draw" ~ 1,
+           TRUE ~ 0),
+         G = if_else(home_away == "home_team", home_goals, away_goals),
+         GA = if_else(home_away == "home_team", away_goals, home_goals),
+         xG = if_else(home_away == "home_team", home_xG, away_xG),
+         xGA = if_else(home_away == "home_team", away_xG, home_xG))
+
+
+```
+
+## 決定力
+```{r}
+team_players_stats <- understat_team_players_stats(team_url = c("https://understat.com/team/Liverpool/2024", "https://understat.com/team/Manchester_City/2024", "https://understat.com/team/Barcelona/2024", "https://understat.com/team/Real_Madrid/2024"))
+
+team_players_stats %>% 
+  group_by(player_name) %>%
+  summarise(
+    shots = sum(shots),
+    goals = sum(goals),
+    goalshots = goals/shots) %>%
+  arrange(desc(goals)) %>% 
+  view()
+
+```
+
+
+## ranking
+```{r}
+Ranking <- Laliga_2024 %>%
+  group_by(team) %>%
+  summarise(points = sum(point),
+            G = sum(G),
+            xG = sum(xG)) %>%
+  arrange(desc(points))
+
+# DT::datatableを使用してランキングを表示
+DT::datatable(Ranking,
+              extensions = "Buttons",
+              options = list(
+                pageLength = 20,
+                buttons = c("copy", "csv", "excel", "pdf", "print")
+              ))
+
+# 上位10チームを抽出
+top_10 <- Ranking %>%
+  head(10) %>%
+  pull(team)
+
+# 上位10チームの累積ポイントをプロット
+g <- Laliga_2024 %>%
+  select(team, datetime, point) %>%
+  group_by(team) %>%
+  mutate(points = cumsum(point)) %>%
+  filter(team %in% top_10) %>%
+  ggplot(aes(datetime, points, group = 1, color = team)) +
+  geom_line() +
+  labs(title = "Cumulative Points of Top 10 Teams",
+       x = "Date",
+       y = "Points")
+
+# plotlyを使ってインタラクティブに表示
+plotly::ggplotly(g)
+
+```
+
+
+## xGとxGAのプロット
+
+```{r}
+# xGとxGAの比較プロット
+Laliga_2024 %>%
+  group_by(team) %>%
+  summarise(xG = sum(xG),
+            xGA = sum(xGA)) %>%
+  ggplot(aes(xG, xGA, color = team, label = team)) + 
+  geom_point() +
+  geom_abline(slope = 1, linetype = "dashed", color = "grey") +
+  ggrepel::geom_label_repel() +
+  labs(title = "xG vs xGA by Team",
+       x = "xG",
+       y = "xGA")
+
+```
+
+
+## GとxGのプロット
+
+```{r}
+# 実際のゴール数とxGの比較プロット
+Laliga_2024 %>%
+  group_by(team) %>%
+  summarise(G = sum(G),
+            xG = sum(xG),
+            xGA = sum(xGA)) %>%
+  ggplot(aes(xG, G, color = team, label = team)) + 
+  geom_point() +
+  geom_abline(slope = 1, linetype = "dashed", color = "grey") +
+  ggrepel::geom_label_repel() +
+  labs(title = "Goals vs xG by Team",
+       x = "xG",
+       y = "Goals")
+```
+
+## シーズンショットロケーションのプロット
+```{r}
+# 2024年シーズンのショットデータを取得
+LaLiga_shot_location <- understat_league_season_shots(league = "La liga",
+                                                      season_start_year = 2025) %>%
+  as_tibble() %>%
+  mutate(minute = as.double(minute))
+
+# ゴールとxGの比較プロット
+LaLiga_shot_location %>%
+  group_by(player) %>%
+  summarise(G = sum(str_detect(result, "Goal")),
+            xG = sum(xG)) %>%
+  arrange(desc(G)) %>%
+  ggplot(aes(xG, G)) +
+  geom_point() +
+  geom_abline(slope = 1, linetype = "dashed", color = "grey") +
+  geom_text_repel(aes(label = player)) +
+  labs(title = "Goals vs xG by Player",
+       x = "xG",
+       y = "Goals")
+
+# データの確認
+LaLiga_shot_location %>%
+  glimpse()
+
+```
+
+##出場時間（要修正）
+```{r}
+# プレイヤーごとの出場時間のトップ10を棒グラフで表示
+LaLiga_shot_location %>%
+  filter((h_a == "h" & home_team == "Barcelona") |
+         (h_a == "a" & away_team == "Barcelona")) |> 
+  group_by(player) %>%
+  summarise(min = sum(minute)) %>%
+  arrange(desc(min)) %>%
+  slice_head(n = 10) %>%  # トップ10のプレイヤーを選択
+  ggplot(aes(x = reorder(player, min), y = min)) +  # 出場時間でプレイヤー名を並べ替え
+  geom_bar(stat = "identity", fill = "steelblue") +  # 棒グラフを作成
+  coord_flip() +  # 棒グラフを横向きに
+  labs(title = "Top 10 Players by Playing Time",
+       x = "Player",
+       y = "Minutes Played") +
+  theme_minimal()  # シンプルなテーマを適用
+
+```
+
+
+# Barcelona
+## バルセロナのゴール分布
+
+```{r}
+# バルセロナのホームおよびアウェイのゴール分布をヒストグラムで表示
+LaLiga_shot_location %>%
+  filter(result == "Goal",
+         (h_a == "h" & home_team == "Barcelona") |
+         (h_a == "a" & away_team == "Barcelona")) %>%
+  ggplot(aes(x = minute)) +
+  geom_histogram(binwidth = 5, fill = "blue", color = "white") +
+  labs(title = "Goal Distribution for Barcelona",
+       x = "Minute",
+       y = "Goal Count")
+```
+
+
+
+##選手の個人ステータス
+###Possession
+
+```{r}
+
+#Yamal
+Yamal_url <- "https://fbref.com/en/players/82ec26c1/Lamine-Yamal"
+Yamal_possession <- fb_player_match_logs(Yamal_url, season_end_year = 2025, stat_type = 'possession')
+
+# Jules Kounde
+Kounde_url <- "https://fbref.com/en/players/4d1666ff/Jules-Kounde"
+Kounde_possession <- fb_player_match_logs(Kounde_url, season_end_year = 2025, stat_type = 'possession')
+
+# Robert Lewandowski
+Lewandowski_url <- "https://fbref.com/en/players/8d78e732/Robert-Lewandowski"
+Lewandowski_possession <- fb_player_match_logs(Lewandowski_url, season_end_year = 2025, stat_type = 'possession')
+
+# Raphinha
+Raphinha_url <- "https://fbref.com/en/players/3423f250/Raphinha"
+Raphinha_possession <- fb_player_match_logs(Raphinha_url, season_end_year = 2025, stat_type = 'possession')
+
+# Pau Cubarsi
+Cubarsi_url <- "https://fbref.com/en/players/cc7888f3/Pau-Cubarsi"
+Cubarsi_possession <- fb_player_match_logs(Cubarsi_url, season_end_year = 2025, stat_type = 'possession')
+
+# Pedri
+Pedri_url <- "https://fbref.com/en/players/0d9b2d31/Pedri"
+Pedri_possession <- fb_player_match_logs(Pedri_url, season_end_year = 2025, stat_type = 'possession')
+
+# Alejandro Balde
+Balde_url <- "https://fbref.com/en/players/5ccc9672/Alejandro-Balde"
+Balde_possession <- fb_player_match_logs(Balde_url, season_end_year = 2025, stat_type = 'possession')
+
+# Marc Casado
+Casado_url <- "https://fbref.com/en/players/2ef08833/Marc-Casado"
+Casado_possession <- fb_player_match_logs(Casado_url, season_end_year = 2025, stat_type = 'possession')
+
+# Ferran Torres
+Torres_url <- "https://fbref.com/en/players/9e1035f8/Ferran-Torres"
+Torres_possession <- fb_player_match_logs(Torres_url, season_end_year = 2025, stat_type = 'possession')
+
+dplyr::glimpse(Balde_possession)
+
+# データフレームを統合する
+all_players_possession <- bind_rows(
+  Yamal_possession,
+  Kounde_possession,
+  Lewandowski_possession,
+  Raphinha_possession,
+  Cubarsi_possession,
+  Pedri_possession,
+  Balde_possession,
+  Casado_possession,
+  Torres_possession
+)%>% tibble()
+
+
+# 選手ごとのボールロスト比較
+all_players_possession <- all_players_possession %>% 
+  tibble() %>% 
+  filter(Comp == "La Liga") %>% 
+  select(Player, Season, Date, Day, Comp, Round, Venue, Result, Squad, Opponent, Start, Pos, Min, Mis_Carries, Dis_Carries) %>% 
+  replace_na(list(Mis_Carries = 0, Dis_Carries = 0))   # NAを0に置き換え
+
+all_players_possession %>% 
+  group_by(Player) %>% 
+  summarise(Mis_Carries = sum(Mis_Carries),
+            Dis_Carries = sum(Dis_Carries),
+            balllost = Mis_Carries + Dis_Carries) %>% 
+  arrange(desc(balllost))
+  
+## 各選手ごとに試合ごとのMis_Carries数を表示
+mis_carries_wide <- all_players_possession %>%
+  filter(Comp == "La Liga") %>% 
+  select(Player, Date, Mis_Carries) %>%  # 必要な列を選択
+  pivot_wider(names_from = Date, values_from = Mis_Carries)  # 試合日時を列に展開
+
+# 表形式で表示
+view(mis_carries_wide)
+
+# Dateを第N試合に変換
+mis_carries_wide_nth_game <- all_players_possession %>%
+  filter(Comp == "La Liga") %>% 
+  group_by(Player) %>% 
+  select(Player, Round, Mis_Carries,Dis_Carries) %>% 
+  pivot_wider(names_from = Round, values_from = Mis_Carries)  # 第N試合を列に展開
+
+# 表示
+view(mis_carries_wide_nth_game)
+
+# RoundごとにMis_Carries数、Dis_Carries数、balllost数を算出
+round_carries_summary <- all_players_possession %>%
+  group_by(Round) %>%  # Roundごとにグループ化
+  summarise(Mis_Carries = sum(Mis_Carries),
+            Dis_Carries = sum(Dis_Carries),
+            balllost = Mis_Carries + Dis_Carries) %>%  # Mis_CarriesとDis_Carriesを合計
+  arrange(Round)  # Roundを昇順で並び替え
+
+# 表形式で表示
+print(round_carries_summary)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

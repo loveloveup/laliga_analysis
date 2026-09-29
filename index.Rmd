@@ -25,37 +25,102 @@ library(ggrepel)
 library(worldfootballR)
 
 # dataset
+Laliga_2022 <- understat_league_match_results(league = "La liga",
+                                         season_start_year = 2022) |> 
+  　　　　　　tibble()
 Laliga_2021 <- understat_league_match_results(league = "La liga",
-                                         season_start_year = 2021)
-Laliga_2021 <- tibble(Laliga_2021)
-
-Laliga_2021_match <- understat_league_match_results(league = "La liga",
-                                         season_start_year = 2021)
-Laliga_2021_match <- tibble(Laliga_2021_match)
-
-
+                                         season_start_year = 2021) |> 
+  　　　　　　tibble()
+Laliga_2020 <- understat_league_match_results(league = "La liga",
+                                         season_start_year = 2020) |> 
+  　　　　　　tibble()
+Laliga_2019 <- understat_league_match_results(league = "La liga",
+                                         season_start_year = 2019) |> 
+  　　　　　　tibble()
+Laliga_2018 <- understat_league_match_results(league = "La liga",
+                                         season_start_year = 2018) |> 
+  　　　　　　tibble()
+Laliga_2017 <- understat_league_match_results(league = "La liga",
+                                         season_start_year = 2017) |> 
+  　　　　　　tibble()
+Laliga_2016 <- understat_league_match_results(league = "La liga",
+                                         season_start_year = 2016) |> 
+  　　　　　　tibble()
+Laliga_2015 <- understat_league_match_results(league = "La liga",
+                                         season_start_year = 2015) |> 
+             tibble()
+Laliga_2014 <- understat_league_match_results(league = "La liga",
+                                         season_start_year = 2014) |> 
+             tibble()
 ```
 
 # data summary
 
 ```{r}
-Laliga_2021 |> 
-  glimpse()
-Laliga_2021 |> 
-  head() |> 
-  view()
+#データ結合
 
-# wide ??? long
-Laliga_2021 <- Laliga_2021 |> 
+Laliga_2014_2022 <- Laliga_2022 |> 
+  bind_rows(Laliga_2014,Laliga_2015,Laliga_2016,Laliga_2017,Laliga_2018,
+            Laliga_2019,Laliga_2020,Laliga_2021)
+
+#監督
+manager <- readxl::read_xlsx("data/Barcelona_manager.xlsx")
+
+# wide ??? long Team列を作成し、データセットを２倍に
+Laliga_2014_2022_long <- Laliga_2014_2022 |> 
   pivot_longer(cols = c(home_team,away_team),
                names_to = "home_away",
                values_to = "team") |>
   mutate(win = if_else(home_goals > away_goals,"home_team",
                        if_else(home_goals == away_goals,"draw","away_team")),
          point = if_else(home_away == win,3,
-                         if_else(win == "draw",1,0)))
+                         if_else(win == "draw",1,0)),
+         G = if_else(home_away == "home_team",home_goals,away_goals),
+         GA = if_else(home_away == "away_team",away_goals,home_goals),
+         xG = if_else(home_away == "home_team",home_xG,away_xG),
+         xGA = if_else(home_away == "away_team",away_xG,home_xG))
+
+#監督列追加
+Laliga_BARCELONA_1422_manager <- Laliga_2014_2022_long |> 
+  filter(team == "Barcelona") |> 
+  cross_join(manager) |> 
+  mutate(manager = ifelse(datetime>=就任&datetime<=退任,Manager,"Unknown")) |> 
+  filter(manager != "Unknown")
 
 ```
+
+##監督分析
+```{r}
+Laliga_BARCELONA_1422_manager |> 
+  group_by(manager) |> 
+  summarise(sum_points = sum(point),
+            win = sum(as.integer(point >= 3)),
+            lose = sum(as.integer(point == 0)),
+            G = sum(G),
+            xG = sum(xG),
+            game = n_distinct(match_id),
+            av_points = sum_points/game,
+            av_G = G/game,
+            av_xG = xG/game) 
+
+Laliga_BARCELONA_1422_manager |> 
+  filter(manager == "Xavi") |> 
+  group_by(season) |> 
+  summarise(sum_points = sum(point),
+            win = sum(as.integer(point >= 3)),
+            lose = sum(as.integer(point == 0)),
+            G = sum(G),
+            xG = sum(xG),
+            game = n_distinct(match_id),
+            av_points = sum_points/game,
+            av_G = G/game,
+            av_xG = xG/game) 
+  
+
+```
+
+
+
 
 ## ranking
 ```{r}
