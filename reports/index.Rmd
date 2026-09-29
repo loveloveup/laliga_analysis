@@ -64,7 +64,7 @@ Laliga_2014_2022 <- Laliga_2022 |>
             Laliga_2019,Laliga_2020,Laliga_2021)
 
 #監督
-manager <- readxl::read_xlsx("data/Barcelona_manager.xlsx")
+manager <- readxl::read_xlsx("../data/raw/Barcelona_manager.xlsx")
 
 # wide ??? long Team列を作成し、データセットを２倍に
 Laliga_2014_2022_long <- Laliga_2014_2022 |> 

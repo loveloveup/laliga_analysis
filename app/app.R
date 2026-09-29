@@ -1,12 +1,11 @@
 # =============================================================================
 #  app.R  —  欧州サッカー インタラクティブ分析ダッシュボード
 #
-#  元の laliga_2425.Rmd を「シーズン・リーグ・チーム・選手を自由に切り替えて
-#  分析できる」形に作り替えたものです。
+#  元の reports/seasons/laliga_24-25.Rmd を「シーズン・リーグ・チーム・選手を
+#  自由に切り替えて分析できる」形に作り替えたものです。
 #
-#  起動方法:
-#    setwd("このファイルのあるフォルダ")
-#    shiny::runApp()
+#  起動方法（プロジェクトのルートで）:
+#    shiny::runApp("app")
 #
 #  データソース: Understat (https://understat.com/) / FBref (https://fbref.com/)
 #                worldfootballR 経由
@@ -41,10 +40,11 @@ keep_sel <- function(current, choices) {
       all(current %in% choices)) current else choices[1]
 }
 
-if (!file.exists("wfr_helpers.R")) {
-  stop("wfr_helpers.R が見つかりません。app.R と同じフォルダに置いてください。", call. = FALSE)
+.helpers <- Filter(file.exists, c("R/wfr_helpers.R", "../R/wfr_helpers.R"))
+if (!length(.helpers)) {
+  stop("R/wfr_helpers.R が見つかりません。プロジェクトのルートか app/ フォルダから起動してください。", call. = FALSE)
 }
-source("wfr_helpers.R", encoding = "UTF-8")
+source(.helpers[1], encoding = "UTF-8")
 
 CUR <- current_season_start_year()
 ggplot2::theme_set(theme_wfr())
@@ -85,7 +85,7 @@ ui <- page_navbar(
     actionButton("load", "データ取得 / 更新", class = "btn-primary w-100"),
     hr(),
     h6("キャッシュ"),
-    helpText("取得済みデータは .wfr_cache フォルダに保存され、次回から高速に読み込まれます。"),
+    helpText("取得済みデータは data/cache フォルダに保存され、次回から高速に読み込まれます。"),
     actionButton("clear_cache", "キャッシュを削除", class = "btn-outline-secondary btn-sm w-100"),
     hr(),
     helpText(HTML("出典: <a href='https://understat.com/' target='_blank'>Understat</a> / ",

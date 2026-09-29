@@ -1,6 +1,6 @@
 # 欧州サッカー インタラクティブ分析ツール
 
-`laliga_2425.Rmd` を、**リーグ・シーズン・チーム・選手を自由に切り替えて分析できる形**に作り替えたものです。
+`reports/seasons/laliga_24-25.Rmd` を、**リーグ・シーズン・チーム・選手を自由に切り替えて分析できる形**に作り替えたものです。
 あわせて、ご要望の **オフサイドにかける数 / かかる数** の分析を追加しています。
 
 データソース
@@ -11,18 +11,29 @@
 
 ---
 
-## ファイル構成
+## フォルダ構成
 
-| ファイル | 内容 |
-|---|---|
-| `app.R` | Shiny アプリ本体。ブラウザ上でリーグ・シーズン・選手を切り替えて分析 |
-| `wfr_helpers.R` | データ取得・整形・作図の共通関数（アプリとレポートの両方が使用） |
-| `report_template.Rmd` | 元のRmdに近い形の HTML レポート。パラメータでシーズンや選手を切り替え |
-| `.wfr_cache/` | 取得済みデータの保存先（自動生成） |
+```
+laliga_analysis/
+├── app/app.R              Shiny アプリ本体
+├── R/wfr_helpers.R        データ取得・整形・作図の共通関数(アプリとレポートが共有)
+├── reports/               レポートのソース(Rmd)
+│   ├── index.Rmd          公開トップ(→ docs/index.html)
+│   ├── template.Rmd       パラメータでシーズン・選手を切り替える HTML レポート
+│   ├── interactive.Rmd    Shiny 不要のインタラクティブ HTML レポート
+│   └── seasons/           シーズン別の Rmd(laliga_22-23 / 23-24 / 24-25)
+├── assets/fbx/            interactive.Rmd 用の JS / CSS
+├── data/
+│   ├── raw/               手作業で用意した元データ(監督の xlsx など)
+│   └── cache/             取得済みデータの保存先(自動生成・git 管理外)
+├── docs/                  公開用 HTML(GitHub Pages の公開元)
+└── scripts/               補助スクリプト(render_docs.R など)
+```
 
-3ファイルは**同じフォルダ**に置いてください。
+どのフォルダから実行しても、`R/wfr_helpers.R` を目印にプロジェクトのルートを自動で探します。
 
----
+公開用 HTML の更新: `source("scripts/render_docs.R")` で `docs/` に書き出し、コミットして push します。
+GitHub Pages の公開元は **main ブランチの /docs** に設定してください。
 
 ## セットアップ
 
@@ -37,12 +48,12 @@ devtools::install_github("JaseZiv/worldfootballR")   # CRAN版は古いので Gi
 ## 起動
 
 ```r
-setwd("ファイルを置いたフォルダ")
-shiny::runApp()
+# プロジェクトのルートで実行
+shiny::runApp("app")
 ```
 
 左のサイドバーでリーグ（複数選択可）とシーズン範囲を指定し、**「データ取得 / 更新」**を押します。
-取得したデータは `.wfr_cache/` に保存され、次回以降は瞬時に読み込まれます。
+取得したデータは `data/cache/` に保存され、次回以降は瞬時に読み込まれます。
 
 ---
 
@@ -106,7 +117,7 @@ CSV ダウンロード、キャッシュの状況確認、出典と注意点。
 
 ```r
 rmarkdown::render(
-  "report_template.Rmd",
+  "reports/template.Rmd",
   params = list(
     league            = "EPL",          # "EPL" / "La liga" / "Bundesliga" / "Serie A" / "Ligue 1" / "RFPL"
     season_start_year = 2025,           # 2025 なら 2025/26 シーズン
@@ -143,6 +154,6 @@ RStudio なら Knit ボタン横の **「Knit with Parameters…」** からも�
 - **試合単位のオフサイド**を見たい場合は、`fb_team_match_log_stats(team_urls = ..., stat_type = "misc")` を使うと
   1試合ごとのログが取れます（スクレイピングのため時間がかかります）。
 - グラフ内の日本語が文字化けする場合は、日本語フォント（Noto Sans JP 等）をインストールしてください。
-  `wfr_helpers.R` の `jp_family()` が自動で候補を探します。
+  `R/wfr_helpers.R` の `jp_family()` が自動で候補を探します。
 - xPts（期待勝点）は Understat の勝敗確率から算出しています。
 - 相関はあくまで相関であり、因果関係を示すものではありません。

@@ -23,11 +23,11 @@ output:
 <!--
   Shiny を使わずに、ブラウザだけで操作できるレポート。
   - データは R で集計して JSON として HTML に埋め込む（fbx-data チャンク）
-  - 描画と操作は fbx/fbx.js（エンジン）と fbx/fbx.css（見た目）が担当する
+  - 描画と操作は assets/fbx/fbx.js（エンジン）と assets/fbx/fbx.css（見た目）が担当する
   - 各章は fbx_mount("章の名前") を置くだけ
 
   出力例：
-  rmarkdown::render("report_interactive.Rmd",
+  rmarkdown::render("reports/interactive.Rmd",
                     params = list(league = "EPL", season_start_year = 0,
                                   compare_seasons = 4, focus_team = "Liverpool",
                                   focus_players = c("Mohamed Salah", "Cody Gakpo")),
@@ -36,7 +36,7 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
-source("wfr_helpers.R", encoding = "UTF-8")
+source(Filter(file.exists, c("R/wfr_helpers.R", "../R/wfr_helpers.R"))[1], encoding = "UTF-8")
 
 LG      <- params$league
 CUR     <- current_season_start_year()          # 今日の日付から見た最新シーズン
@@ -204,9 +204,9 @@ fbx_json <- jsonlite::toJSON(fbx_data, dataframe = "columns", na = "null", digit
 fbx_json <- gsub("</", "<\\/", fbx_json, fixed = TRUE)   # 文字列中の </script> 対策
 
 htmltools::tagList(
-  htmltools::tags$style(htmltools::HTML(paste(readLines("fbx/fbx.css", encoding = "UTF-8"), collapse = "\n"))),
+  htmltools::tags$style(htmltools::HTML(paste(readLines(file.path(wfr_root(), "assets/fbx/fbx.css"), encoding = "UTF-8"), collapse = "\n"))),
   htmltools::tags$script(htmltools::HTML(paste0("window.FBX_DATA = ", fbx_json, ";"))),
-  htmltools::tags$script(htmltools::HTML(paste(readLines("fbx/fbx.js", encoding = "UTF-8"), collapse = "\n")))
+  htmltools::tags$script(htmltools::HTML(paste(readLines(file.path(wfr_root(), "assets/fbx/fbx.js"), encoding = "UTF-8"), collapse = "\n")))
 )
 ```
 

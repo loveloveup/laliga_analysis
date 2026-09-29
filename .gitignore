@@ -1,17 +1,17 @@
+# R / RStudio
 .Rproj.user
 .Rhistory
 .RData
 .Ruserdata
 
-.wfr_cache/
-files.zip
-report_template_files/
-
 # ローカル環境依存
 .Renviron
 .vscode/
 
-# 生成物(Rmd から再生成可能)
-report_template.html
-report_interactive.html
+# 取得データのキャッシュ(再取得できる)
+data/cache/
+
+# 生成物(Rmd から再生成できる)。公開用は docs/ だけ追跡する
+reports/*.html
 *_files/
+files.zip

@@ -10,7 +10,7 @@
 #        https://jaseziv.github.io/worldfootballR/articles/extract-fbref-data.html
 #        https://jaseziv.github.io/worldfootballR/articles/load-scraped-data.html
 #
-#  app.R / report_template.Rmd から source() して使います。
+#  app/app.R / reports/*.Rmd から source() して使います。
 # =============================================================================
 
 suppressPackageStartupMessages({
@@ -74,8 +74,20 @@ league_choices <- function(exclude_rfpl = FALSE) {
 # 2. キャッシュ（毎回スクレイピングしないための仕組み）
 # -----------------------------------------------------------------------------
 
+#' プロジェクトのルート（R/wfr_helpers.R を含むフォルダ）を上位へたどって探す。
+#' app/ や reports/ など、どこから実行しても同じ場所を指す。
+wfr_root <- function(start = getwd()) {
+  d <- normalizePath(start, winslash = "/", mustWork = FALSE)
+  repeat {
+    if (file.exists(file.path(d, "R", "wfr_helpers.R"))) return(d)
+    p <- dirname(d)
+    if (identical(p, d)) return(normalizePath(getwd(), winslash = "/"))
+    d <- p
+  }
+}
+
 wfr_cache_dir <- function() {
-  dir <- getOption("wfr.cache_dir", file.path(".", ".wfr_cache"))
+  dir <- getOption("wfr.cache_dir", file.path(wfr_root(), "data", "cache"))
   if (!dir.exists(dir)) dir.create(dir, recursive = TRUE, showWarnings = FALSE)
   dir
 }

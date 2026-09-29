@@ -24,7 +24,7 @@ output:
   使い方（シーズン・チーム・選手を自由に変えて出力する）
 
   rmarkdown::render(
-    "report_template.Rmd",
+    "reports/template.Rmd",
     params = list(
       league            = "EPL",
       season_start_year = 2025,
@@ -42,7 +42,7 @@ output:
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
                       fig.width = 9, fig.height = 6)
 
-source("wfr_helpers.R", encoding = "UTF-8")
+source(Filter(file.exists, c("R/wfr_helpers.R", "../R/wfr_helpers.R"))[1], encoding = "UTF-8")
 library(plotly)
 library(DT)
 ggplot2::theme_set(theme_wfr())
