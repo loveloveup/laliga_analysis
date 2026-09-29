@@ -1,0 +1,400 @@
+---
+title: "`r paste0(params$league, ' インタラクティブ分析レポート')`"
+author: "loveloveup"
+date: "`r format(Sys.Date(), '%Y/%m/%d')`"
+params:
+  league: "La liga"
+  # 最初に表示するシーズン（開始年）。0 = 自動（最新シーズン。まだ10節未満なら1つ前）
+  season_start_year: 0
+  # 比較するシーズン。数値1つ = 最新シーズンから遡る数、配列 = そのシーズン（例: [2021, 2022]）
+  compare_seasons: 6
+  focus_team: "Barcelona"
+  focus_players: ["Lamine Yamal", "Robert Lewandowski", "Raphinha"]
+  offside_leagues: ["EPL", "La liga", "Bundesliga", "Serie A", "Ligue 1"]
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    number_sections: true
+    theme: flatly
+---
+
+<!--
+  Shiny を使わずに、ブラウザだけで操作できるレポート。
+  - データは R で集計して JSON として HTML に埋め込む（fbx-data チャンク）
+  - 描画と操作は fbx/fbx.js（エンジン）と fbx/fbx.css（見た目）が担当する
+  - 各章は fbx_mount("章の名前") を置くだけ
+
+  出力例：
+  rmarkdown::render("report_interactive.Rmd",
+                    params = list(league = "EPL", season_start_year = 0,
+                                  compare_seasons = 4, focus_team = "Liverpool",
+                                  focus_players = c("Mohamed Salah", "Cody Gakpo")),
+                    output_file = "epl_2025_interactive.html")
+-->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+source("wfr_helpers.R", encoding = "UTF-8")
+
+LG      <- params$league
+CUR     <- current_season_start_year()          # 今日の日付から見た最新シーズン
+cs      <- as.integer(unlist(params$compare_seasons))
+SEASONS <- if (length(cs) == 1 && cs < 100) seq(CUR - cs + 1L, CUR) else sort(unique(cs))
+YR_PARAM <- as.integer(params$season_start_year)
+if (!is.na(YR_PARAM) && YR_PARAM > 0) SEASONS <- sort(unique(c(SEASONS, YR_PARAM)))
+TEAM    <- params$focus_team
+PL      <- as.character(unlist(params$focus_players))
+LGS     <- as.character(unlist(params$offside_leagues))
+
+#' 章を置く：<div> と、エンジンに描画させる1行のスクリプト
+fbx_mount <- function(name) {
+  id <- paste0("fbx-", name)
+  htmltools::tagList(
+    htmltools::tags$div(id = id),
+    htmltools::tags$script(htmltools::HTML(sprintf("FBX.mount('%s', '%s');", name, id)))
+  )
+}
+```
+
+```{r fbx-data}
+# ---- 取得 ------------------------------------------------------------------
+results   <- us_results(LG, SEASONS)
+matches   <- tidy_results(results)
+stand_all <- standings(matches)
+
+# 最初に表示するシーズン：指定がなければ最新（10節未満なら1つ前）
+YR <- if (!is.na(YR_PARAM) && YR_PARAM > 0) YR_PARAM else {
+  latest  <- max(matches$season_start_year)
+  played  <- max(c(0, matches$match_no[matches$season_start_year == latest]))
+  if (played >= 10 || latest == min(SEASONS)) latest else max(SEASONS[SEASONS < latest])
+}
+SEASONS <- SEASONS[SEASONS <= max(matches$season_start_year)]   # Understat にまだ無いシーズンは除く
+
+shots_all <- us_shots(LG, complete_seasons = SEASONS)
+shots     <- dplyr::filter(shots_all, season_start_year %in% SEASONS)
+
+# オフサイド：FBref（データが揃っているシーズン）＋ ESPN（それ以降〜最新）
+offs       <- offside_tables_combined(LGS, last_season = max(SEASONS))
+off_team   <- offs$team
+off_player <- dplyr::filter(offs$player, season_start_year %in% SEASONS)
+
+# 相関分析（かけた数 × かかった数）：チーム力の突合 → 分析用データ → 相関・回帰・帰無シミュレーション
+off_quality <- offside_team_quality(off_team, LGS)
+off_team    <- dplyr::left_join(off_team, dplyr::select(off_quality, league_understat, season_start_year, squad, xgd_pm),
+                                by = c("league_understat", "season_start_year", "squad"))
+corr_d      <- offside_corr_data(off_team)
+corr_cors   <- offside_corr_table(corr_d)
+corr_models <- offside_corr_models(corr_d)
+corr_null   <- offside_null_sim(corr_d)
+
+team_players <- purrr::map_dfr(SEASONS, function(s) {
+  tms <- sort(unique(matches$team[matches$season_start_year == s]))
+  if (!length(tms)) return(NULL)
+  tp <- us_team_players(tms, s)
+  if (nrow(tp)) dplyr::mutate(tp, season_start_year = s) else NULL
+})
+
+team_map <- purrr::map_dfr(SEASONS, function(s) {
+  tms <- stand_all$team[stand_all$season_start_year == s]
+  o   <- dplyr::filter(off_team, league_understat == LG, season_start_year == s)
+  if (!length(tms)) return(NULL)
+  if (!nrow(o)) {
+    return(tibble::tibble(us_name = tms, fb_name = NA_character_, 方法 = "データなし", season_start_year = s))
+  }
+  harmonise_team_names(tms, o$squad) %>% dplyr::mutate(season_start_year = s)
+})
+
+# 選手のシーズン推移。複数チーム在籍はシュート数の多い順に「A / B」
+# 比較シーズンより後は事前取得データが途中までで補完もしていないため含めない
+shots_hist <- dplyr::filter(shots_all, season_start_year <= max(SEASONS))
+trend <- player_shot_stats(shots_hist, by = c("player", "season_start_year"))
+trend_team <- shots_hist %>%
+  dplyr::count(player, season_start_year, team) %>%
+  dplyr::arrange(player, season_start_year, dplyr::desc(n)) %>%
+  dplyr::group_by(player, season_start_year) %>%
+  dplyr::summarise(team = paste(team, collapse = " / "), .groups = "drop")
+trend <- dplyr::left_join(trend, trend_team, by = c("player", "season_start_year"))
+
+# ---- 辞書（文字列は番号にして容量を減らす）-----------------------------------
+ix <- function(x, dict) { i <- match(as.character(x), dict) - 1L; i[is.na(i)] <- -1L; i }
+nz <- function(x) { x <- as.character(x); x[!is.na(x) & nzchar(x)] }
+
+teams      <- sort(unique(nz(c(matches$team, matches$opponent))))
+players    <- sort(unique(nz(c(shots_all$player, shots$player_assisted, team_players$player_name))))
+teams_all  <- sort(unique(nz(trend$team)))
+squads     <- sort(unique(nz(c(off_team$squad, off_player$squad))))
+fb_players <- sort(unique(nz(off_player$player)))
+positions  <- sort(unique(nz(off_player$pos)))
+results_d  <- sort(unique(nz(shots$result)))
+situ_d     <- sort(unique(nz(shots$situation)))
+methods    <- unique(nz(team_map$方法))
+mids       <- unique(as.character(matches$match_id))
+num <- function(x) suppressWarnings(as.numeric(x))
+
+race_j <- matches %>%
+  dplyr::transmute(s = ix(season_start_year, SEASONS), t = ix(team, teams), o = ix(opponent, teams),
+                   mid = ix(match_id, mids), n = match_no, h = is_home,
+                   g = G, ga = GA, xg = round(xG, 3), xga = round(xGA, 3), xp = round(xPoint, 3),
+                   d = format(date, "%Y-%m-%d"))
+
+shots_j <- shots %>%
+  dplyr::transmute(s = ix(season_start_year, SEASONS), mid = ix(match_id, mids),
+                   t = ix(team, teams), o = ix(opponent, teams),
+                   p = ix(player, players), a = ix(player_assisted, players),
+                   mi = as.integer(minute), x = round(X, 3), y = round(Y, 3), xg = round(xG, 4),
+                   r = ix(result, results_d), si = ix(situation, situ_d)) %>%
+  dplyr::filter(mid >= 0)
+
+trend_j <- trend %>%
+  dplyr::transmute(y = season_start_year, p = ix(player, players), tm = ix(team, teams_all),
+                   sh = shots, g = goals, xg = round(xG, 3), npg = npgoals, npxg = round(npxG, 3),
+                   a = assists, xa = round(xA, 3), kp = key_passes)
+
+tp_j <- if (nrow(team_players)) {
+  team_players %>%
+    dplyr::transmute(s = ix(season_start_year, SEASONS), t = ix(team_title, teams), pl = ix(player_name, players),
+                     pos = position, gm = num(games), mn = num(time), g = num(goals), xg = round(num(xG), 3),
+                     a = num(assists), xa = round(num(xA), 3), sh = num(shots), kp = num(key_passes),
+                     npg = num(npg), npxg = round(num(npxG), 3), xgc = round(num(xGChain), 3),
+                     xgb = round(num(xGBuildup), 3), yc = num(yellow_cards), rc = num(red_cards))
+} else NULL
+
+off_sources <- c("FBref", "ESPN")
+off_team_j <- off_team %>%
+  dplyr::transmute(lg = ix(league_understat, LGS), y = season_start_year, sq = ix(squad, squads),
+                   gm = round(試合数, 1), ka = かかる数, ke = かける数, src = ix(source, off_sources),
+                   xgd = round(xgd_pm, 3))
+
+null_hist <- hist(corr_null$r, breaks = seq(floor(min(corr_null$r, corr_null$obs) * 100) / 100 - 0.01,
+                                            ceiling(max(corr_null$r, corr_null$obs) * 100) / 100 + 0.01, by = 0.01),
+                  plot = FALSE)
+corr_j <- list(
+  models = corr_models %>% dplyr::transmute(id, label = モデル, note = 説明, est, se, lo, hi, p, n, clusters, r2),
+  cors   = corr_cors %>% dplyr::transmute(label = 分析, note = 説明, n, r, lo, hi, p, rho, p_rho),
+  null   = list(mean = corr_null$mean, lo = corr_null$lo, hi = corr_null$hi, obs = corr_null$obs,
+                p = corr_null$p, B = corr_null$B, centers = null_hist$mids, counts = null_hist$counts)
+)
+
+off_player_j <- off_player %>%
+  dplyr::transmute(s = ix(season_start_year, SEASONS), lg = ix(league_understat, LGS),
+                   pl = ix(player, fb_players), sq = ix(squad, squads), pos = ix(pos, positions),
+                   n90 = round(nineties, 1), apps = 出場試合, off = かかる数, src = ix(source, off_sources))
+
+team_map_j <- team_map %>%
+  dplyr::transmute(s = ix(season_start_year, SEASONS), t = ix(us_name, teams),
+                   sq = ix(fb_name, squads), m = ix(方法, methods))
+
+fbx_data <- list(
+  meta = list(league = LG, leagueLabel = league_label(LG), seasons = SEASONS,
+              seasonLabels = season_label(SEASONS), defaultSeason = match(YR, SEASONS) - 1L,
+              focusTeam = TEAM, focusPlayers = PL, leagues = LGS, leagueLabels = league_label(LGS),
+              generated = format(Sys.time(), "%Y-%m-%d %H:%M")),
+  teams = teams, players = players, teamsAll = teams_all, squads = squads, fbPlayers = fb_players,
+  positions = positions, shotResults = results_d, situations = situ_d, methods = methods, offSources = off_sources,
+  race = race_j, shots = shots_j, trend = trend_j, teamPlayers = tp_j,
+  offTeam = off_team_j, offPlayer = off_player_j, teamMap = team_map_j, corr = corr_j
+)
+```
+
+```{r fbx-engine}
+# データとエンジンを埋め込む。htmltools で出すと pandoc に中身を加工されない
+fbx_json <- jsonlite::toJSON(fbx_data, dataframe = "columns", na = "null", digits = 4)
+fbx_json <- gsub("</", "<\\/", fbx_json, fixed = TRUE)   # 文字列中の </script> 対策
+
+htmltools::tagList(
+  htmltools::tags$style(htmltools::HTML(paste(readLines("fbx/fbx.css", encoding = "UTF-8"), collapse = "\n"))),
+  htmltools::tags$script(htmltools::HTML(paste0("window.FBX_DATA = ", fbx_json, ";"))),
+  htmltools::tags$script(htmltools::HTML(paste(readLines("fbx/fbx.js", encoding = "UTF-8"), collapse = "\n")))
+)
+```
+
+**対象**: `r league_label(LG)`　／　**比較シーズン**: `r paste(season_label(SEASONS), collapse = "、")`　／　**注目**: `r TEAM`（`r paste(PL, collapse = "、")`）
+
+各章の上にある「シーズン」「節」を切り替えると、**すべての章が同じ条件で描き直されます**。グラフは点や棒にマウスを乗せると値が出ます。表は見出しをクリックすると並び替えできます。
+
+# 概要
+
+注目チームの成績と、累積勝点・期待勝点の推移。チームは切り替えられます。
+
+```{r}
+fbx_mount("overview")
+```
+
+# 順位表
+
+節の範囲やホーム／アウェイで区切った順位表。「xG 指標」にすると、内容（xG）と結果（勝点）の差が分かります。
+
+```{r}
+fbx_mount("standings")
+```
+
+## 勝点の推移
+
+チップで選んだチームだけ色が付き、ほかは灰色の線で残ります（最大8チーム）。
+
+```{r}
+fbx_mount("race")
+```
+
+## チーム指標の散布図
+
+横軸・縦軸の指標を自由に組み合わせられます。
+
+```{r}
+fbx_mount("teamScatter")
+```
+
+# シーズン比較
+
+```{r}
+fbx_mount("seasonCompare")
+```
+
+# 選手分析
+
+## 選手ランキング
+
+シュートデータから集計した選手成績。検索すると一致した選手を強調します。
+
+```{r}
+fbx_mount("players")
+```
+
+## シュートマップ
+
+選手（最大8人）またはチーム単位で表示。状況（流れの中・セットプレー・PK など）でも絞り込めます。
+
+```{r}
+fbx_mount("shotmap")
+```
+
+## 選手のシーズン推移
+
+```{r}
+fbx_mount("playerTrend")
+```
+
+## 得点・失点の時間帯
+
+```{r}
+fbx_mount("goalTiming")
+```
+
+## 出場時間つきスタッツ
+
+Understat のチームページの出場時間（分）を使います。シュートの発生分の合計は出場時間ではありません。
+
+```{r}
+fbx_mount("teamPlayers")
+```
+
+# オフサイド分析
+
+Understat にオフサイドの指標がないため、別のデータ源を使います。
+
+- **〜`r season_label(min(off_team$season_start_year[off_team$source == "ESPN"], na.rm = TRUE) - 1L)`**：FBref の misc（その他）スタッツ（worldfootballR の事前取得データ）
+- **`r season_label(min(off_team$season_start_year[off_team$source == "ESPN"], na.rm = TRUE))`〜最新**：ESPN の試合詳細から集計（FBref の更新が止まっているため）。2023/24 の Barcelona で FBref と完全に一致することを確認済み
+
+- **かけた数**：相手の選手がオフサイドになった回数
+- **かかった数**：自チームの選手がオフサイドになった回数
+
+## チーム（シーズン内の比較）
+
+```{r}
+fbx_mount("offside")
+```
+
+## 同じチームのシーズン推移
+
+チームを選ぶと、シーズンごとの変化を追えます（最大8チーム、灰色の細線はリーグ内のほかのチーム）。リーグ内順位の推移や、リーグ平均との比較もできます。
+
+```{r}
+fbx_mount("offsideTeamTrend")
+```
+
+## 選手
+
+```{r}
+fbx_mount("offsidePlayers")
+```
+
+# オフサイドの相関分析：かけた数が多いと、かかる数は減るか
+
+```{r corr-text}
+fr  <- function(x, d = 3) formatC(x, format = "f", digits = d)
+fp  <- function(p) if (p < 0.001) "p < 0.001" else paste0("p = ", fr(p))
+ci  <- function(row) paste0("95%CI ", fr(row$lo), "〜", fr(row$hi))
+cr  <- function(lbl) corr_cors[corr_cors$分析 == lbl, ]
+mr  <- function(id) corr_models[corr_models$id == id, ]
+c_raw <- cr("素の値"); c_in <- cr("リーグ×シーズン内"); c_ch <- cr("前季からの変化"); c_adj <- cr("チーム力を統制")
+m2 <- mr("m2"); m3 <- mr("m3"); m4 <- mr("m4")
+yr_rng  <- range(corr_d$season_start_year)
+n_ls    <- length(unique(corr_d$ls))
+beyond  <- c_in$r < corr_null$lo                          # 仕組み上の範囲より強い負の相関か
+robust  <- all(c(c_in$p, c_ch$p, c_adj$p, m3$p, m4$p) < 0.05) && all(c(c_in$r, c_ch$r, c_adj$r, m3$est, m4$est) < 0)
+season_games <- 38
+```
+
+## 結論（要約）
+
+`r if (robust && beyond) "**負の相関がある。** 同じリーグ・同じシーズンのチーム同士で比べると、オフサイドにかけた数が多いチームほど、オフサイドにかかった数が少ない。" else if (robust) "**負の相関は統計的に有意だが、仕組み上生じる大きさとの区別がつきにくい。**" else "**頑健な負の相関は確認できない。**"`
+
+- **リーグ×シーズン内の相関**：r = `r fr(c_in$r)`（`r ci(c_in)`、`r fp(c_in$p)`、n = `r c_in$n` チーム×シーズン）
+- **仕組み上の目安との比較**：かけやすさとかかりやすさが無関係でも r ≈ `r fr(corr_null$mean)`（95%：`r fr(corr_null$lo)`〜`r fr(corr_null$hi)`）程度の負の相関は生じる。実際の値は`r if (beyond) "この範囲より明らかに強い" else "この範囲と区別できない"`（`r corr_null$B` 回のシミュレーション、片側 p = `r fr(corr_null$p)`）
+- **チーム力（xG 差）を統制しても**：偏相関 r = `r fr(c_adj$r)`（`r fp(c_adj$p)`）
+- **同じチームの年ごとの変化でも**：前季よりかけた数が増えたチームは、かかった数が減る傾向（r = `r fr(c_ch$r)`、`r fp(c_ch$p)`、n = `r c_ch$n`）
+- **効果の大きさ**：チーム固定効果＋チーム力を入れた回帰で、かけた数が1試合あたり1回多いと、かかった数は `r fr(abs(m4$est), 2)` 回／試合`r if (m4$est < 0) "少ない" else "多い"`（`r ci(m4)`）。1シーズン（`r season_games` 試合）に換算すると、かけた数が `r season_games` 回多いと、かかった数は約 `r round(abs(m4$est) * season_games, 1)` 回`r if (m4$est < 0) "少ない" else "多い"`
+- **ただし説明力は小さい**：リーグ×シーズン内でかかった数のばらつきのうち、かけた数で説明できるのは約 `r round(100 * c_in$r^2, 1)`%
+
+一方で、**全データをそのまま並べると相関はほぼゼロ**（r = `r fr(c_raw$r)`、`r fp(c_raw$p)`）です。これは、リーグやシーズンによってオフサイドの全体水準が違う（多いリーグ・シーズンでは、かけた数もかかった数も一緒に多い）ためで、条件をそろえると隠れていた負の関係が現れます。
+
+## 分析の考え方
+
+- **対象**：`r paste(league_label(LGS), collapse = "、")` の `r season_label(yr_rng[1])`〜`r season_label(yr_rng[2])`（シーズンを通して揃っている `r n_ls` リーグ×シーズン、`r nrow(corr_d)` チーム×シーズン）。進行中のシーズンは含めない
+- **指標**：1試合あたりの「かけた数」（相手選手がオフサイドになった回数）と「かかった数」（自チームの選手がオフサイドになった回数）
+- **気をつけた点**
+  1. **全体水準の違い**：オフサイドは「誰かがかかる = 相手がかけた」なので、リーグ×シーズンでは両者の合計が一致する。全体水準の違いで生じる見かけの相関を除くため、リーグ×シーズンの中で比べる（z スコア、固定効果）
+  2. **仕組み上の相関**：チームは自分自身とは対戦しないため、無関係でも弱い負の相関が生じる。各リーグ×シーズンで「かけやすさ」を並べ替えて「かかりやすさ」と無関係にし、ポアソン誤差を加えた帰無モデルでその大きさを見積もった
+  3. **チーム力による交絡**：強いチームは相手を押し込むので、両方に影響しうる。Understat の xG 差／試合を統制変数に入れた
+  4. **同じチームの繰り返し**：同じチームが何シーズンも入るため、回帰の標準誤差はチーム単位のクラスタ頑健標準誤差にした
+
+## 条件を変えて確かめる
+
+分析方法・リーグ・シーズンを変えると、相関係数・信頼区間・p 値がその場で計算し直されます。リーグ別・シーズン別の結果も下に並びます。
+
+```{r}
+fbx_mount("offsideCorr")
+```
+
+## 回帰モデルと頑健性の確認
+
+```{r}
+fbx_mount("offsideModels")
+```
+
+## 解釈と限界
+
+- **因果関係ではない**：「オフサイドトラップを増やせば、自チームがオフサイドにかからなくなる」とは言えない。考えられる説明は次のとおり
+  - **試合の主導権と陣地**：高い位置で守るチームは相手を自陣に押し込み、相手の裏抜け（→ かけた数）が増える。一方で相手は深く引くため、自チームの前線には裏のスペースが少なく、オフサイドにかかりにくい
+  - **チームのスタイル**：ハイラインで前から奪うチームは、攻撃でもボールを保持して崩す傾向があり、裏へ走る回数そのものが少ない可能性がある
+  - チーム力（xG 差）を統制しても関係が残ったので、「強いチームだから」だけでは説明できない。ただしポゼッション率や守備ラインの高さは統制できていない
+- **データの限界**：チーム×シーズンの合計なので、試合の中での時間帯・スコア状況の影響は見ていない。`r season_label(min(off_team$season_start_year[off_team$source == "ESPN"], na.rm = TRUE))` 以降は ESPN、それ以前は FBref のデータ（2023/24 の突合で一致を確認）
+- **帰無モデルは単純化したもの**：チームの「かけやすさ × 相手のかかりやすさ」の掛け算で期待値を作っている。実際の試合の相性までは再現していない
+
+# 統合分析（xG × オフサイド）
+
+ハイライン（オフサイドを多くかける）と、被xG などの関係。
+
+```{r}
+fbx_mount("join")
+```
+
+# データについて
+
+- Understat <https://understat.com/>（試合結果・xG・シュート・出場時間）
+- FBref <https://fbref.com/>（オフサイド。worldfootballR の事前取得データ）
+- ESPN <https://www.espn.com/soccer/>（FBref のデータが途中までのシーズン以降のオフサイド）
+- worldfootballR <https://jaseziv.github.io/worldfootballR/>
+- 作成日時：`r format(Sys.time(), "%Y-%m-%d %H:%M")`　／　埋め込みデータ：`r format(round(nchar(fbx_json, type = "bytes") / 1024^2, 1), nsmall = 1)` MB

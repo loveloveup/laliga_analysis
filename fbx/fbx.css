@@ -1,0 +1,142 @@
+/* =============================================================================
+ *  fbx.css — インタラクティブ章の見た目（fbx.js とセットで使う）
+ *  配色は検証済みのカテゴリ8色（fbx.js の SERIES）と、控えめな罫線・文字色で統一する。
+ * ========================================================================== */
+.fbx {
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --ring: rgba(11, 11, 11, .10);
+  --ctl: #2c3e50;
+  --hl: #eaf2fc;
+  --good: #0ca30c;
+  --bad: #d03b3b;
+  font-family: system-ui, -apple-system, "Segoe UI", "Yu Gothic UI", "Hiragino Sans", Meiryo, sans-serif;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--ring);
+  border-radius: 10px;
+  padding: 14px 18px 12px;
+  margin: 12px 0 30px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.fbx * { box-sizing: border-box; }
+
+/* ---- 操作パネル ---- */
+.fbx-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+.fbx-lab { font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .04em; margin-right: 2px; }
+.fbx-lab.gap { margin-left: 12px; }
+.fbx button {
+  font: inherit; font-size: 12.5px; line-height: 1.5;
+  border: 1px solid var(--axis); background: #fff; color: var(--ink2);
+  border-radius: 999px; padding: 3px 11px; cursor: pointer;
+}
+.fbx button:hover { border-color: var(--ctl); color: var(--ctl); }
+.fbx button.on { background: var(--ctl); border-color: var(--ctl); color: #fff; }
+.fbx button:focus-visible, .fbx select:focus-visible, .fbx input:focus-visible,
+.fbx [tabindex]:focus-visible { outline: 2px solid #2a78d6; outline-offset: 2px; }
+.fbx select, .fbx input[type=search] {
+  font: inherit; font-size: 12.5px; height: auto; width: auto; display: inline-block;
+  border: 1px solid var(--axis); background: #fff; color: var(--ink);
+  border-radius: 6px; padding: 3px 8px;
+}
+.fbx input[type=search] { min-width: 220px; }
+.fbx input[type=range] { width: 150px; display: inline-block; vertical-align: middle; margin: 0 4px; }
+.fbx label.fbx-chk {
+  font-size: 12.5px; color: var(--ink2); font-weight: 400; margin: 0 8px 0 0;
+  display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+}
+.fbx label.fbx-chk input { margin: 0; }
+.fbx-sep, .fbx-note2 { color: var(--muted); font-size: 12px; }
+.fbx-flash { color: var(--bad); font-size: 12px; }
+.fbx-divider { border-top: 1px solid var(--grid); margin: 2px 0 10px; }
+
+/* チップ：選択中は系列色の線を付け、凡例を兼ねる */
+.fbx button.fbx-chip { border-radius: 6px; padding: 2px 9px; }
+.fbx button.fbx-chip.on { background: #fff; color: var(--ink); border-color: var(--ink2); font-weight: 600; }
+.fbx button.fbx-chip i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+.fbx button.fbx-chip small { color: var(--muted); margin-left: 5px; font-size: 11px; font-weight: 400; }
+.fbx button.fbx-chip .x { margin-left: 6px; color: var(--muted); font-weight: 400; }
+
+/* ---- KPI ---- */
+.fbx-kpis { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0 8px; }
+.fbx-kpi { flex: 1 1 140px; background: #fff; border: 1px solid var(--ring); border-radius: 8px; padding: 8px 12px; }
+.fbx-kpi .k { font-size: 12px; color: var(--muted); }
+.fbx-kpi .v { font-size: 20px; font-weight: 700; color: var(--ink); }
+.fbx-kpi .s { font-size: 11.5px; color: var(--ink2); }
+.fbx-kpi.main { box-shadow: inset 3px 0 0 #2a78d6; }
+
+/* ---- 凡例 ---- */
+.fbx-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 6px 0 2px; font-size: 12px; color: var(--ink2); }
+.fbx-legend i { display: inline-block; width: 16px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+.fbx-legend i.dot { width: 10px; height: 10px; border-radius: 50%; }
+.fbx-legend i.ring { width: 10px; height: 10px; border-radius: 50%; background: #fff !important; border: 2px solid var(--ink2); }
+
+/* ---- SVG ---- */
+.fbx-svg { display: block; overflow: visible; touch-action: pan-y; max-width: 100%; }
+.fbx-svg text { font-family: inherit; }
+.fbx-svg .grid { stroke: var(--grid); stroke-width: 1; }
+.fbx-svg .axis { stroke: var(--axis); stroke-width: 1; }
+.fbx-svg .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.fbx-svg .axlab { fill: var(--ink2); font-size: 11.5px; }
+.fbx-svg .lab { fill: var(--ink2); font-size: 11px; paint-order: stroke; stroke: #fcfcfb; stroke-width: 3px; stroke-linejoin: round; }
+.fbx-svg .lab.strong { fill: var(--ink); font-weight: 600; }
+.fbx-svg .ref { stroke: var(--axis); stroke-width: 1.2; }
+.fbx-svg .reflab { fill: var(--muted); font-size: 10.5px; }
+.fbx-svg .cross { stroke: var(--ink2); stroke-width: 1; }
+.fbx-svg .pitch { fill: none; stroke: var(--axis); stroke-width: 1.2; }
+.fbx-svg .hover-ring { fill: none; stroke: var(--ink); stroke-width: 1.5; }
+
+/* ---- 横棒 ---- */
+.fbx-hbars { margin: 8px 0 12px; }
+.fbx-hrow { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.fbx-hlab { flex: 0 0 160px; font-size: 12px; color: var(--ink2); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fbx-htrack { flex: 1 1 auto; height: 14px; min-width: 0; }
+.fbx-hfill { height: 14px; border-radius: 0 4px 4px 0; min-width: 2px; }
+.fbx-hval { flex: 0 0 90px; font-size: 12px; color: var(--ink2); font-variant-numeric: tabular-nums; }
+
+/* ---- 試合結果の並び ---- */
+.fbx-strip { display: flex; flex-wrap: wrap; gap: 3px; margin: 4px 0 10px; }
+.fbx-res { width: 22px; height: 22px; border-radius: 4px; font-size: 11px; font-weight: 700; color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: default; }
+.fbx-res.W { background: var(--good); }
+.fbx-res.D { background: var(--muted); }
+.fbx-res.L { background: var(--bad); }
+.fbx-sub { font-size: 12px; font-weight: 700; color: var(--ink2); margin: 10px 0 2px; }
+
+/* ---- 表 ---- */
+.fbx-scroll { max-height: 520px; overflow: auto; border: 1px solid var(--grid); border-radius: 6px; }
+.fbx table.fbx-t { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 0; background: #fff; }
+.fbx-t th, .fbx-t td { padding: 5px 9px; border-bottom: 1px solid #efeee9; white-space: nowrap; }
+.fbx-t thead th {
+  position: sticky; top: 0; z-index: 1; background: var(--surface);
+  text-align: left; color: var(--ink2); font-weight: 700; border-bottom: 1px solid var(--axis);
+  cursor: pointer; user-select: none;
+}
+.fbx-t thead th:hover { color: var(--ink); }
+.fbx-t th.sorted { color: var(--ink); }
+.fbx-t .num { text-align: right; font-variant-numeric: tabular-nums; }
+.fbx-t tr.hl td { background: var(--hl); }
+.fbx-t i.key { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+.fbx-t .miss { color: var(--bad); }
+.fbx-note { font-size: 12px; color: var(--muted); margin: 6px 0 8px; }
+.fbx-notice { font-size: 12.5px; color: #6b4200; background: #fff7e6; border: 1px solid #f0d49b; border-radius: 6px; padding: 6px 10px; margin: 6px 0 10px; }
+.fbx-flex { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+.fbx-flex > .main { flex: 1 1 380px; min-width: 0; }
+.fbx-flex > .side { flex: 1 1 320px; min-width: 0; }
+
+/* ---- ツールチップ（値が主、ラベルが従） ---- */
+.fbx-tip {
+  position: fixed; z-index: 10000; pointer-events: none; display: none; max-width: 300px;
+  background: #fff; color: #0b0b0b; border: 1px solid rgba(11, 11, 11, .12); border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .12); padding: 6px 9px;
+  font: 12px/1.45 system-ui, -apple-system, "Segoe UI", "Yu Gothic UI", Meiryo, sans-serif;
+}
+.fbx-tip-h { font-weight: 600; color: #52514e; margin-bottom: 3px; }
+.fbx-tip-r { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.fbx-tip-r i { display: inline-block; width: 12px; height: 3px; border-radius: 2px; flex: 0 0 auto; }
+.fbx-tip-r b { font-variant-numeric: tabular-nums; }
+.fbx-tip-r span { color: #52514e; }

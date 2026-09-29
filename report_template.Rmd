@@ -1,0 +1,387 @@
+---
+title: "`r paste0(params$league, ' ', params$season_start_year, '/', (params$season_start_year + 1) %% 100, ' 分析レポート')`"
+author: "loveloveup"
+date: "`r format(Sys.Date(), '%Y/%m/%d')`"
+params:
+  league: "La liga"
+  season_start_year: 2024
+  compare_seasons: [2021, 2022, 2023, 2024]
+  focus_team: "Barcelona"
+  focus_players: ["Lamine Yamal", "Robert Lewandowski", "Raphinha"]
+  offside_leagues: ["EPL", "La liga", "Bundesliga", "Serie A", "Ligue 1"]
+output:
+  html_document:
+    toc: TRUE
+    toc_depth: 3
+    toc_float: TRUE
+    number_sections: TRUE
+    highlight: monochrome
+    theme: flatly
+    code_folding: hide
+---
+
+<!--
+  使い方（シーズン・チーム・選手を自由に変えて出力する）
+
+  rmarkdown::render(
+    "report_template.Rmd",
+    params = list(
+      league            = "EPL",
+      season_start_year = 2025,
+      compare_seasons   = 2020:2025,
+      focus_team        = "Liverpool",
+      focus_players     = c("Mohamed Salah", "Cody Gakpo")
+    ),
+    output_file = "epl_2025.html"
+  )
+
+  RStudio なら Knit ボタン横の「Knit with Parameters...」でも指定できます。
+-->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.width = 9, fig.height = 6)
+
+source("wfr_helpers.R", encoding = "UTF-8")
+library(plotly)
+library(DT)
+ggplot2::theme_set(theme_wfr())
+
+LG   <- params$league
+YR   <- as.integer(params$season_start_year)
+YRS  <- sort(unique(as.integer(params$compare_seasons)))
+TEAM <- params$focus_team
+PL   <- params$focus_players
+LGS  <- params$offside_leagues
+
+dt <- function(x, ...) DT::datatable(x, rownames = FALSE, extensions = "Buttons",
+                                     options = list(pageLength = 20, dom = "Bfrtip", scrollX = TRUE,
+                                                    buttons = c("copy", "csv", "excel")), ...)
+```
+
+対象: **`r league_label(LG)` `r season_label(YR)`**　/　比較シーズン: `r paste(season_label(YRS), collapse = ", ")`
+
+データソース
+
+- Understat <https://understat.com/>
+- FBref <https://fbref.com/>
+- worldfootballR <https://jaseziv.github.io/worldfootballR/articles/extract-understat-data.html>
+
+# データの取得
+
+```{r fetch}
+results  <- us_results(LG, unique(c(YRS, YR)))
+matches  <- tidy_results(results)
+stand_all<- standings(matches)
+stand    <- dplyr::filter(stand_all, season_start_year == YR)
+
+shots_all <- us_shots(LG, complete_seasons = unique(c(YRS, YR)))
+shots     <- dplyr::filter(shots_all, season_start_year == YR)
+
+dplyr::glimpse(results)
+```
+
+# 順位表
+
+```{r standings}
+stand %>%
+  dplyr::select(順位, チーム = team, MP, W, D, L, Pts, G, GA, GD,
+                xG, xGA, xGD, xPts, `G-xG`, `GA-xGA`, `Pts-xPts`) %>%
+  dt()
+```
+
+## 累積勝点の推移（上位10チーム）
+
+```{r cumpoints}
+top10 <- stand %>% dplyr::slice_head(n = 10) %>% dplyr::pull(team)
+
+g <- matches %>%
+  dplyr::filter(season_start_year == YR, team %in% top10) %>%
+  ggplot2::ggplot(ggplot2::aes(match_no, cum_points, colour = team, group = team,
+                               text = paste0(team, "<br>第", match_no, "節: ", cum_points, "点"))) +
+  ggplot2::geom_line(linewidth = .7) +
+  ggplot2::labs(x = "節", y = "累積勝点", colour = NULL)
+
+plotly::ggplotly(g, tooltip = "text")
+```
+
+## xG と xGA
+
+```{r xg-xga}
+ggplot2::ggplot(stand, ggplot2::aes(xG, xGA, label = team)) +
+  ggplot2::geom_abline(slope = 1, linetype = "dashed", colour = "grey60") +
+  ggplot2::geom_point(ggplot2::aes(size = Pts), colour = "#2c7fb8", alpha = .8) +
+  ggrepel::geom_text_repel(size = 3.4, max.overlaps = 30, family = jp_family()) +
+  ggplot2::scale_size_continuous(range = c(2, 7), name = "勝点") +
+  ggplot2::labs(x = "xG", y = "xGA", subtitle = "右下ほど強い")
+```
+
+## 実得点 と xG（チームの決定力）
+
+```{r g-xg}
+ggplot2::ggplot(stand, ggplot2::aes(xG, G, label = team)) +
+  ggplot2::geom_abline(slope = 1, linetype = "dashed", colour = "grey60") +
+  ggplot2::geom_point(ggplot2::aes(colour = `G-xG`), size = 3) +
+  ggrepel::geom_text_repel(size = 3.4, max.overlaps = 30, family = jp_family()) +
+  ggplot2::scale_colour_gradient2(low = "#c0392b", mid = "grey70", high = "#1e8449",
+                                  midpoint = 0, name = "G - xG") +
+  ggplot2::labs(x = "xG", y = "実得点")
+```
+
+# シーズンごとの比較
+
+```{r season-compare}
+g <- stand_all %>%
+  dplyr::filter(season_start_year %in% YRS) %>%
+  ggplot2::ggplot(ggplot2::aes(season_start_year, xGD, colour = team, group = team,
+                               text = paste0(team, "<br>", season_label(season_start_year),
+                                             "<br>xGD: ", xGD))) +
+  ggplot2::geom_line(linewidth = .6) + ggplot2::geom_point(size = 1.4) +
+  ggplot2::scale_x_continuous(breaks = YRS, labels = season_label(YRS)) +
+  ggplot2::labs(x = NULL, y = "xGD", colour = NULL)
+
+plotly::ggplotly(g, tooltip = "text")
+```
+
+```{r season-table}
+stand_all %>%
+  dplyr::filter(season_start_year %in% YRS) %>%
+  dplyr::transmute(シーズン = season_label(season_start_year), 順位, チーム = team,
+                   Pts, xPts, G, xG, GA, xGA, xGD) %>%
+  dt()
+```
+
+# 選手分析
+
+## 決定力ランキング
+
+```{r player-rank}
+pstats <- player_shot_stats(shots, by = c("player", "team"))
+
+pstats %>%
+  dplyr::transmute(選手 = player, チーム = team, シュート = shots, 得点 = goals,
+                   xG = round(xG, 2), `G-xG` = round(`G-xG`, 2), 決定率 = round(決定率, 3),
+                   アシスト = assists, KP = key_passes, xA = round(xA, 2)) %>%
+  dt()
+```
+
+## 得点 vs xG
+
+```{r player-g-xg}
+d <- dplyr::filter(pstats, shots >= 20) %>%
+  dplyr::mutate(強調 = player %in% PL)
+
+ggplot2::ggplot(d, ggplot2::aes(xG, goals)) +
+  ggplot2::geom_abline(slope = 1, linetype = "dashed", colour = "grey60") +
+  ggplot2::geom_point(ggplot2::aes(colour = 強調, size = 強調), alpha = .85) +
+  ggplot2::scale_colour_manual(values = c(`FALSE` = "grey65", `TRUE` = "#d7263d"), guide = "none") +
+  ggplot2::scale_size_manual(values = c(`FALSE` = 2, `TRUE` = 4), guide = "none") +
+  ggrepel::geom_text_repel(data = dplyr::filter(d, 強調 | goals >= 10),
+                           ggplot2::aes(label = player), size = 3.4,
+                           max.overlaps = 30, family = jp_family()) +
+  ggplot2::labs(x = "xG", y = "得点", subtitle = "シュート20本以上")
+```
+
+## 注目選手のシュートマップ
+
+```{r shotmap, fig.height=5}
+sh_pl <- dplyr::filter(shots, player %in% PL)
+if (nrow(sh_pl)) {
+  gg_shotmap(sh_pl,
+             title = paste(PL, collapse = " / "),
+             subtitle = paste0(season_label(YR), "｜シュート", nrow(sh_pl),
+                               "本 / 得点", sum(sh_pl$is_goal),
+                               " / xG ", round(sum(sh_pl$xG), 1))) +
+    ggplot2::facet_wrap(~ player)
+} else {
+  cat("該当する選手のデータがありません。")
+}
+```
+
+## 注目選手のシーズン推移
+
+```{r player-trend}
+agg <- shots_all %>%
+  dplyr::filter(player %in% PL) %>%
+  dplyr::group_by(player, season_start_year) %>%
+  dplyr::summarise(得点 = sum(is_goal), xG = round(sum(xG), 2), .groups = "drop") %>%
+  tidyr::pivot_longer(c(得点, xG), names_to = "指標", values_to = "値")
+
+if (nrow(agg)) {
+  g <- ggplot2::ggplot(agg, ggplot2::aes(season_start_year, 値, colour = player, linetype = 指標,
+                                         group = interaction(player, 指標),
+                                         text = paste0(player, "<br>",
+                                                       season_label(season_start_year),
+                                                       "<br>", 指標, ": ", 値))) +
+    ggplot2::geom_line(linewidth = .7) + ggplot2::geom_point(size = 1.6) +
+    ggplot2::labs(x = NULL, y = NULL, colour = NULL, linetype = NULL)
+  plotly::ggplotly(g, tooltip = "text")
+}
+```
+
+## 注目チームの得点時間帯
+
+```{r goal-timing, fig.height=4.5}
+gl <- dplyr::filter(shots, team == TEAM, is_goal)
+
+ggplot2::ggplot(gl, ggplot2::aes(minute)) +
+  ggplot2::geom_histogram(binwidth = 5, fill = "#2c7fb8", colour = "white") +
+  ggplot2::scale_x_continuous(breaks = seq(0, 90, 15)) +
+  ggplot2::labs(x = "時間（分）", y = "得点数",
+                title = paste0(TEAM, "｜得点の時間帯分布"),
+                subtitle = paste0(season_label(YR), " / 合計 ", nrow(gl), "点"))
+```
+
+## 出場時間つきスタッツ（注目チーム）
+
+元のRmdではシュートの発生分(minute)を合計していましたが、それは出場時間ではありません。
+正しくはチームページの `time`（出場分数）を使います。
+
+```{r team-players}
+tp <- us_team_players(TEAM, YR)
+if (nrow(tp)) {
+  tp %>%
+    dplyr::transmute(選手 = player_name, ポジション = position, 試合 = games,
+                     出場時間 = time, 得点 = goals, xG = round(xG, 2),
+                     アシスト = assists, xA = round(xA, 2),
+                     `90分あたり得点` = round(`90分あたり得点`, 2)) %>%
+    dplyr::arrange(dplyr::desc(出場時間)) %>%
+    dt()
+}
+```
+
+# オフサイド分析
+
+Understat にオフサイドの指標はないため、FBref の misc（その他）スタッツを使います。
+
+- **かかる数**: 自チームの選手がオフサイドを取られた回数（`Team_or_Opponent == "team"`）
+- **かける数**: 相手をオフサイドに掛けた回数（`Team_or_Opponent == "opponent"`）
+
+```{r offside-fetch}
+off <- offside_team_table(fb_misc("team"))
+off_lg <- dplyr::filter(off, league_understat %in% LGS)
+```
+
+```{r offside-coverage, results="asis", echo=FALSE}
+# FBref の事前取得データは更新が止まることがあるため、対象シーズンの収録試合数を確認する
+off_mp <- off %>%
+  dplyr::filter(league_understat == LG, season_start_year == YR) %>%
+  dplyr::pull(試合数) %>%
+  stats::median(na.rm = TRUE)
+us_mp <- stats::median(stand$MP)
+
+if (!is.finite(off_mp)) {
+  cat("> **注意**: ", season_label(YR), " のオフサイドデータがありません。\n\n", sep = "")
+} else if (off_mp < us_mp - 1) {
+  cat("> **注意**: ", season_label(YR), " のオフサイドデータは1チームあたり約 ",
+      round(off_mp), " 試合分しか収録されていません（順位表は ", round(us_mp),
+      " 試合）。FBref のデータ更新が止まっているため、以下の値はシーズン序盤のみの集計です。\n\n",
+      sep = "")
+}
+```
+
+## 同一シーズンのチーム別比較（全リーグ）
+
+```{r offside-scatter, fig.height=8}
+d <- dplyr::filter(off_lg, season_start_year == YR)
+
+ggplot2::ggplot(d, ggplot2::aes(かかる数_試合平均, かける数_試合平均,
+                                colour = league_label(league_understat), label = squad)) +
+  ggplot2::geom_vline(xintercept = stats::median(d$かかる数_試合平均, na.rm = TRUE),
+                      linetype = "dashed", colour = "grey65") +
+  ggplot2::geom_hline(yintercept = stats::median(d$かける数_試合平均, na.rm = TRUE),
+                      linetype = "dashed", colour = "grey65") +
+  ggplot2::geom_point(size = 3, alpha = .85) +
+  ggrepel::geom_text_repel(size = 3, max.overlaps = 40, show.legend = FALSE,
+                           family = jp_family()) +
+  ggplot2::labs(x = "オフサイドにかかった数 / 試合", y = "オフサイドにかけた数 / 試合",
+                colour = NULL, title = paste0(season_label(YR), " シーズン"),
+                subtitle = "左上＝ハイライン守備 / 右下＝裏抜け主体の攻撃")
+```
+
+## リーグ別・シーズン推移
+
+```{r offside-trend}
+agg <- off_lg %>%
+  dplyr::group_by(league_understat, season_start_year) %>%
+  dplyr::summarise(かける数 = round(mean(かける数_試合平均, na.rm = TRUE), 3),
+                   かかる数 = round(mean(かかる数_試合平均, na.rm = TRUE), 3), .groups = "drop") %>%
+  tidyr::pivot_longer(c(かける数, かかる数), names_to = "指標", values_to = "値") %>%
+  dplyr::mutate(リーグ = league_label(league_understat))
+
+g <- ggplot2::ggplot(agg, ggplot2::aes(season_start_year, 値, colour = リーグ, linetype = 指標,
+                                       group = interaction(リーグ, 指標),
+                                       text = paste0(リーグ, "<br>",
+                                                     season_label(season_start_year),
+                                                     "<br>", 指標, ": ", 値))) +
+  ggplot2::geom_line(linewidth = .7) + ggplot2::geom_point(size = 1.5) +
+  ggplot2::labs(x = NULL, y = "1試合あたり回数", colour = NULL, linetype = NULL)
+
+plotly::ggplotly(g, tooltip = "text")
+```
+
+## 対象リーグのチーム別一覧
+
+```{r offside-table}
+dplyr::filter(off_lg, season_start_year == YR) %>%
+  dplyr::transmute(リーグ = league_label(league_understat), チーム = squad,
+                   かける数, かかる数,
+                   `かける数/試合` = round(かける数_試合平均, 2),
+                   `かかる数/試合` = round(かかる数_試合平均, 2),
+                   `差分/試合` = round(差分_試合平均, 2),
+                   トラップ比率 = round(トラップ比率, 3)) %>%
+  dt()
+```
+
+## 選手別（オフサイドにかかった数）
+
+```{r offside-player}
+offp <- offside_player_table(fb_misc("player")) %>%
+  dplyr::filter(season_start_year == YR, league_understat == LG, nineties >= 10)
+
+offp %>%
+  dplyr::arrange(dplyr::desc(かかる数)) %>%
+  dplyr::transmute(選手 = player, チーム = squad, ポジション = pos,
+                   `出場(90分換算)` = round(nineties, 1), かかる数,
+                   `かかる数/90分` = round(かかる数_90分, 3)) %>%
+  dt()
+```
+
+# 統合分析（xG × オフサイド）
+
+```{r joined, fig.height=7}
+j <- join_offside_with_xg(dplyr::filter(stand_all, season_start_year == YR), off)
+
+if (nrow(j) && any(!is.na(j$かける数_試合平均))) {
+  print(
+    ggplot2::ggplot(dplyr::filter(j, !is.na(かける数_試合平均)),
+                    ggplot2::aes(かける数_試合平均, xGA_試合平均, label = team)) +
+      ggplot2::geom_smooth(method = "lm", se = FALSE, colour = "grey70", linewidth = .6) +
+      ggplot2::geom_point(size = 3, colour = "#2c7fb8") +
+      ggrepel::geom_text_repel(size = 3.2, max.overlaps = 40, family = jp_family()) +
+      ggplot2::labs(x = "オフサイドにかけた数 / 試合", y = "被xG / 試合",
+                    subtitle = "ハイラインとリスクの関係")
+  )
+
+  ok <- stats::complete.cases(j$かける数_試合平均, j$xGA_試合平均)
+  cat("相関係数（かける数 vs 被xG）:",
+      round(stats::cor(j$かける数_試合平均[ok], j$xGA_試合平均[ok]), 3), "\n")
+}
+```
+
+```{r joined-table}
+if (nrow(j)) {
+  j %>%
+    dplyr::transmute(順位, チーム = team, `FBref表記` = fb_name, 突合 = 方法,
+                     Pts, xG, xGA,
+                     `かける数/試合` = round(かける数_試合平均, 2),
+                     `かかる数/試合` = round(かかる数_試合平均, 2)) %>%
+    dt()
+}
+```
+
+# セッション情報
+
+```{r session}
+sessionInfo()
+```
